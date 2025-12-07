@@ -6,7 +6,7 @@ streamlit
 kagglehub
 
 # Video editing
-moviepy
+moviepy>=2.0.0
 imageio
 imageio-ffmpeg
 decorator
