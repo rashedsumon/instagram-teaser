@@ -1,14 +1,21 @@
 # requirements.txt
 # Target runtime: Python 3.11.0
+
+# Core
 streamlit
 kagglehub
+
+# Video editing
 moviepy
+imageio
 imageio-ffmpeg
+decorator
+ffmpeg-python
+
+# Imaging & array processing
 Pillow
 numpy
 opencv-python-headless
+
+# Utilities
 tqdm
-ffmpeg-python
-# Optional (for text/branding fonts or remote model SDKs)
-# stability-sdk>=0.8.0
-# runway-python-client>=0.1.0
