@@ -1,7 +1,20 @@
-moviepy>=2.0.0
+# Target runtime: Python 3.11.0
+
+# Core
+streamlit
+kagglehub
+
+# Video editing
+moviepy
 imageio
 imageio-ffmpeg
 decorator
+ffmpeg-python
+
+# Imaging & array processing
 Pillow
 numpy
 opencv-python-headless
+
+# Utilities
+tqdm
