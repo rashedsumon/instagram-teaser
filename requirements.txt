@@ -1,21 +1,7 @@
-# requirements.txt
-# Target runtime: Python 3.11.0
-
-# Core
-streamlit
-kagglehub
-
-# Video editing
 moviepy>=2.0.0
 imageio
 imageio-ffmpeg
 decorator
-ffmpeg-python
-
-# Imaging & array processing
 Pillow
 numpy
 opencv-python-headless
-
-# Utilities
-tqdm
