@@ -1,66 +1,38 @@
 import os
+import cv2
+import numpy as np
 import tempfile
 from pathlib import Path
 from typing import List
 
 import streamlit as st
-from PIL import Image
-
-# Safe MoviePy imports
-try:
-    from moviepy.editor import (
-        ImageClip,
-        concatenate_videoclips,
-        CompositeVideoClip,
-        AudioFileClip,
-        TextClip,
-    )
-    from moviepy.video.fx.all import resize, crop
-except ModuleNotFoundError:
-    st.error(
-        "MoviePy or one of its dependencies is missing.\n"
-        "Ensure your requirements.txt includes:\n"
-        "- moviepy>=2.0.0\n- imageio\n- imageio-ffmpeg\n- decorator\n- Pillow\n- numpy\n- opencv-python-headless"
-    )
-    st.stop()
+from PIL import Image, ImageDraw, ImageFont
 
 # Constants
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 TARGET_RESOLUTION = (1080, 1920)  # Portrait 9:16
-DEFAULT_FPS = 24
+FPS = 24
 
-# Streamlit page setup
-st.set_page_config(
-    page_title="AI Teaser Generator — Instagram Reel (9:16)",
-    layout="centered"
-)
+st.set_page_config(page_title="AI Teaser Generator — Instagram Reel", layout="centered")
 st.title("🎬 AI Teaser Generator — Instagram Reel (9:16)")
-st.markdown(
-    "Create a **5–10 second** cinematic teaser for Instagram Reels (1080×1920, MP4)."
-)
 
-# Sidebar options
-with st.sidebar:
-    st.header("Generation Settings")
-    duration = st.slider("Duration (seconds)", min_value=5, max_value=10, value=7)
-    fps = st.selectbox("Frame rate", [24, 25, 30], index=0)
-    add_music = st.checkbox("Add background music (optional)", value=True)
-    uploaded_music = st.file_uploader("Upload music (MP3/WAV)", type=["mp3", "wav"])
-
-# Main inputs
-st.header("Source inputs")
-script = st.text_area("Short script / concept", value="Cinematic brand reveal.")
+# Inputs
+st.header("Upload reference images (1–4)")
 uploaded_files = st.file_uploader(
-    "Reference image(s) — upload 1 to 4 images", 
-    type=["png", "jpg", "jpeg"], 
-    accept_multiple_files=True
+    "Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True
 )
 
-st.subheader("Style & Branding")
-brand_color = st.color_picker("Brand color", value="#FF6B6B")
-text_overlay = st.text_input("Text overlay (optional)", value="Brand Teaser")
+st.subheader("Style & Text")
+brand_color = st.color_picker("Brand color", "#FF6B6B")
+text_overlay = st.text_input("Overlay text (optional)", "Brand Teaser")
 font_size = st.slider("Text size", 36, 160, 96)
+
+st.subheader("Audio (optional)")
+add_audio = st.checkbox("Add background music")
+uploaded_music = st.file_uploader("Upload MP3/WAV", type=["mp3", "wav"])
+
+duration = st.slider("Video duration (seconds)", 5, 10, 7)
 
 # Generate button
 if st.button("Generate teaser"):
@@ -72,62 +44,51 @@ if st.button("Generate teaser"):
         for f in uploaded_files:
             pil_images.append(Image.open(f).convert("RGB"))
     else:
-        # Fallback: solid color image
+        # fallback solid color
         img = Image.new("RGB", TARGET_RESOLUTION, color=brand_color)
         pil_images.append(img)
 
-    # Local cinematic generation
-    clips = []
-    n_images = len(pil_images)
-    single_dur = max(1.5, duration / max(1, n_images))
+    # Resize and add text overlay
+    processed_images = []
+    for img in pil_images:
+        img = img.resize(TARGET_RESOLUTION, Image.LANCZOS)
+        if text_overlay:
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", font_size)
+            except:
+                font = ImageFont.load_default()
+            text_w, text_h = draw.textsize(text_overlay, font=font)
+            draw.text(
+                ((TARGET_RESOLUTION[0]-text_w)//2, int(TARGET_RESOLUTION[1]*0.75)),
+                text_overlay,
+                font=font,
+                fill=(255, 255, 255)
+            )
+        processed_images.append(np.array(img))
 
-    for pil in pil_images:
-        # Resize to target while preserving aspect ratio
-        img_w, img_h = pil.size
-        scale = max(TARGET_RESOLUTION[0] / img_w, TARGET_RESOLUTION[1] / img_h) * 1.05
-        new_w, new_h = int(img_w * scale), int(img_h * scale)
-        pil_resized = pil.resize((new_w, new_h), Image.LANCZOS)
-        temp_img_path = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
-        pil_resized.save(temp_img_path)
-
-        clip = ImageClip(temp_img_path).set_duration(single_dur)
-        # Crop to target resolution
-        clip = clip.crop(
-            x_center=clip.w // 2, y_center=clip.h // 2,
-            width=TARGET_RESOLUTION[0], height=TARGET_RESOLUTION[1]
-        )
-        clips.append(clip)
-
-    final_clip = concatenate_videoclips(clips, method="compose")
-
-    # Add text overlay
-    if text_overlay:
-        txt_clip = TextClip(
-            text_overlay, fontsize=font_size, color="white", font="Arial-Bold"
-        ).set_duration(final_clip.duration).set_position(("center", "bottom"))
-        final_clip = CompositeVideoClip([final_clip, txt_clip])
-
-    # Add audio
-    if add_music and uploaded_music:
-        music_temp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False).name
-        with open(music_temp, "wb") as f:
-            f.write(uploaded_music.getbuffer())
-        audio = AudioFileClip(music_temp).subclip(0, min(duration, AudioFileClip(music_temp).duration))
-        final_clip = final_clip.set_audio(audio)
-
-    # Export video
+    # Prepare video writer
     out_path = OUTPUT_DIR / f"teaser_{os.getpid()}.mp4"
-    final_clip.write_videofile(
-        str(out_path),
-        fps=fps,
-        codec="libx264",
-        audio_codec="aac",
-        threads=4,
-        preset="medium",
-        ffmpeg_params=["-profile:v", "high", "-level", "4.0", "-crf", "18"],
-        verbose=False,
-        logger=None
-    )
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # mp4
+    out = cv2.VideoWriter(str(out_path), fourcc, FPS, TARGET_RESOLUTION)
+
+    n_images = len(processed_images)
+    frames_per_image = int(FPS * duration / n_images)
+
+    for i, img in enumerate(processed_images):
+        for _ in range(frames_per_image):
+            out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    out.release()
+
+    # Add audio using ffmpeg if uploaded
+    if add_audio and uploaded_music:
+        temp_video = str(out_path)
+        temp_audio = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False).name
+        with open(temp_audio, "wb") as f:
+            f.write(uploaded_music.getbuffer())
+        final_path = OUTPUT_DIR / f"teaser_audio_{os.getpid()}.mp4"
+        os.system(f'ffmpeg -y -i "{temp_video}" -i "{temp_audio}" -c:v copy -c:a aac -shortest "{final_path}"')
+        out_path = final_path
 
     st.success("Video generated!")
     st.video(str(out_path))
